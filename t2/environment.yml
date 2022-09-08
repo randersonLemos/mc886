@@ -7,10 +7,12 @@ dependencies:
   - pip
   - python
   - ipython
+  - jupyter
 
   - pip:
     - numpy
     - scipy
     - pandas
+    - seaborn
     - matplotlib
     - scikit-learn
