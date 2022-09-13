@@ -34,18 +34,12 @@ def preprocessing():
     X.to_csv('X.csv'); y.to_csv('y.csv')
 
 
-class LinearRegression:
-    def __init__(self, n_thetas, n_degrees):
+class MyLinearRegression:
+    def __init__(self, n_thetas):
         self.n_thetas = n_thetas
-        self.n_degrees = n_degrees
 
-        #self.theta_0 = np.random.uniform(low=-1.0, high=1.0, size=1)
-        #self.thetas = np.asmatrix(
-        #    np.random.uniform(low=-1.0, high=1.0, size=n_thetas)
-        #).T
-
-        self.theta_0 = 1
-        self.thetas = np.asmatrix([[1],[1],[1],[1]])
+        self.theta_0 = np.random.uniform(low=-1, high=1, size=1)
+        self.thetas =  np.asmatrix(np.random.uniform(low=-1, high=1, size=n_thetas)).T
 
 
     def h_theta(self, x):
@@ -54,9 +48,8 @@ class LinearRegression:
 
     def h_theta_gradient(self, X, y):
         X = np.asmatrix(X.values)
-        y = np.asmatrix(y.values).T
+        y = np.asmatrix(y.values)
         m = len(y)
- 
         ht = self.h_theta(X)
 
         grad_theta_0 = 1/m * (ht - y).sum()
@@ -76,7 +69,7 @@ class LinearRegression:
 
     def cost(self, X, y):
         X = np.asmatrix(X.values)
-        y = np.asmatrix(y.values).T
+        y = np.asmatrix(y.values)
         m = len(y) 
 
         ht = self.h_theta(X)
@@ -84,25 +77,30 @@ class LinearRegression:
         return float( 1/2*m * (ht - y).T * (ht - y) )
 
 
+    def fit(self, X, y, learning_rate, n_epochs, size_batches=10000, verbose=False):
+        for epoch in range(n_epochs):
+            n_batches = int( len(X) / size_batches )
+
+            grad_theta_0_lst = []
+            grad_thetas_lst = []
+            for en, (batchX, batchy) in enumerate( zip(np.array_split(X, n_batches), np.array_split(y, n_batches)) ):
+                
+                grad_theta_0, grad_thetas = self.h_theta_gradient(batchX, batchy)
+
+                grad_theta_0_lst.append(grad_theta_0)
+                grad_thetas_lst.append(grad_thetas)
+
+                self.h_theta_update(grad_theta_0, grad_thetas, learning_rate=learning_rate)
+                
+                if verbose and (epoch%100 == 0):
+                    print('Processing batch {}'.format(en+1))
+                    print('Cost function at step {:06d}: {:012.6f}'.format(epoch, self.cost(batchX, batchy)))
+
+
 if __name__ == '__main__':
     X = pd.read_csv('X.csv'); y = pd.read_csv('y.csv')
 
-    X = X[['Q1', 'Q2', 'Q3', 'Q4']].iloc[:5,:]
-    y = y[['nivel_profic_lp']].iloc[:5, 0]
-    lr = LinearRegression(4, 1)
-
-    cost = lr.cost(X, y)
-    grad_theta_0, grad_thetas = lr.h_theta_gradient(X, y)
-    lr.h_theta_update(grad_theta_0, grad_thetas, learning_rate=0.1)
-
-    for i in range(100):
-        print(lr.cost(X,y))
-        print(lr.theta_0, lr.thetas)
-
-        grad_theta_0, grad_thetas = lr.h_theta_gradient(X, y)
-        lr.h_theta_update(grad_theta_0, grad_thetas, learning_rate=0.01)
-
-        print('###')
-
-        
-    import IPython; IPython.embed()
+    #X = X[['Q1', 'Q2', 'Q3', 'Q4']]
+    y = y[['porc_ACERT_lp']]
+    lr = MyLinearRegression(n_thetas=X.shape[1])
+    lr.fit(X, y, learning_rate=0.000000000001, n_epochs=10000, verbose=True)
