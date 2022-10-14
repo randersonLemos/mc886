@@ -1,6 +1,6 @@
 from typing import List
 from abc import ABC,abstractmethod
-
+from torch.utils.data import Dataset, DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -21,6 +21,57 @@ class ReLU(BaseFunction):
 
     def grad(self, X):
         return np.where(X >= 0, 1, 0)
+
+
+class LeakyRelu(BaseFunction):    
+    def __call__(self, X, alpha=0.01):
+        return np.maximum(alpha * X, X)
+        
+    def grad(self, X, alpha=0.01):
+        return np.where(x>0, 1, alpha)
+        
+
+class Softmax(BaseFunction):    
+    def __call__(self, X):
+        """
+        Arguments:
+        X: (np.array) input data
+
+        Return:
+        Softmax output
+        """    
+        ##################################
+        # TODO: implement here the Softmax
+        ##################################
+        max_ = np.max(X, axis=1, keepdims=True)
+        exp = np.exp(X - max_)
+        sum_ = np.sum(exp, axis=1, keepdims=True)
+        return exp / sum_ 
+        
+    def grad(self, X):
+        return 1 # discard this gradient
+
+
+class CrossEntropy(BaseFunction):    
+    def __call__(self, Y, Y_pred):
+        """
+        Arguments:
+        Y: (np.array) ground-truth labels
+        Y_pred: (np.array) predicted labels
+
+        Return:
+        Cross-Entropy output
+        """ 
+        ##################################
+        # TODO: implement here the Cross-Entropy
+        ##################################
+        epsilon = 1e-8
+        pred = np.clip(Y_pred, epsilon, 1. - epsilon)
+        cross_entropy = -np.sum(Y * np.log(pred+epsilon)) / pred.shape[0]
+        return cross_entropy
+
+    def grad(self, Y, Y_pred):
+        return Y_pred - Y # gradient with respect to Softmax's input
 
 
 class Model:
@@ -63,7 +114,6 @@ class Model:
         Return: a list of matrices (np.array) of weights and a list of 
         matrices (np.array) of biases.
         """
-        
         
         weights = []
         bias = []
@@ -115,31 +165,182 @@ class Model:
 
             self.Z_list.append(Z)
             self.activations.append(A)
-
-
-
-        #############################################################################
-        # TODO: implement here the forward step.
-        #
-        # A few more instructions:
-        # Note that the weights, bias and activation functions are class variables,
-        # then you can access them via ``self``.
-        #
-        # You should store the input Z of each activation function in ``Z_list``,
-        # and the output of the activation functions in ``activations``. These
-        # information will be important when you implement the backward pass.
-        #############################################################################
         return X
 
 
+class BaseOptimizer(ABC):    
+    def __init__(self, model):
+        self.model = model
+
+    @abstractmethod
+    def step(self, grads):
+        """
+        Arguments:
+        grads: (list)  a list of tuples of matrices (weights' gradient, biases' gradient)
+        both in np.array format.
+        
+        Return: 
+        """
+        pass
+
+
+class SGDOptimizer(BaseOptimizer):
+    def __init__(self, model, lr=1e-3):
+        self.model = model
+        self.lr = lr
+
+    def step(self, grads: List):
+        """
+        Arguments:
+        grads: (list)  a list of tuples of matrices (weights' gradient, biases' gradient)
+        both in np.array format.
+        
+        Return: 
+        """
+        for i, (grad_w, grad_b) in enumerate(grads):
+            self.model.weights[i] = self.model.weights[i] - self.lr * grad_w
+            self.model.bias[i] = self.model.bias[i] - self.lr * grad_b
+    
+
+class AdamOptimizer(BaseOptimizer):
+    pass
+    
+
+class Trainer:
+    def __init__(self, model: Model, optimizer, loss_func: CrossEntropy):
+        self.model = model
+        self.optimizer = optimizer
+        self.loss_func = loss_func
+        self.batch_size = 0
+
+    def backward(self, Y):
+        """
+        Arguments:
+        Y: (np.array) ground truth/label vector.
+
+        Return: 
+        A list of tuples of matrices (weights' gradient, biases' gradient) both in np.array format.
+        The order of this list should be the same as the model's weights. 
+        For example: [(dW0, db0), (dW1, db1), ... ].
+        """
+        ############################################################
+        # TODO: implement here the backward step.
+        ############################################################
+
+        delta = self.model.activations[-1] - Y
+        import IPython; IPython.embed()
+
+        diff = self.loss_func.grad(Y, y_pred)
+
+        weights_and_bias_grads = []
+        
+        for i, weight in enumerate(reversed(self.model.weights)):
+            dw = np.dot(self.model.activations[-i -2].T, diff) * (1 / self.batch_size) 
+            db = np.sum(diff, axis=0) * (1 / self.batch_size)
+            weights_and_bias_grads.append((dw,db))
+            
+            if i < len(self.model.weights) -1 :
+                diff = np.dot(diff, weight.T) * self.model.activation_funcs[-i -2].grad(self.model.Z_list[-i -2])
+                
+        return weights_and_bias_grads[::-1]
+              
+    
+    def train(self, n_epochs: int, train_loader: DataLoader, val_loader: DataLoader):
+        """
+        Arguments:
+        n_epochs: (int) number of epochs
+        train_loader: (DataLoader) train DataLoader
+        val_loader: (DataLoader) validation DataLoader
+
+        Return: 
+        A dictionary with the log of train and validation loss along the epochs
+        """
+        log_dict = {'epoch': [], 
+                   'train_loss': [], 
+                   'val_loss': [],
+                   'train_acc':[],
+                   'val_acc': []}
+
+        self.batch_size = train_loader.batch_size
+        for epoch in tqdm(range(n_epochs)):
+            train_loss_history = []
+            train_gts = []
+            train_preds = []
+            for i, batch in enumerate(train_loader):                
+                X, Y = batch
+                X = X.numpy()
+                Y = Y.numpy()                         
+                Y_pred = self.model.forward(X)
+
+                train_loss = self.loss_func(Y, Y_pred)
+                train_gts.append(Y)
+                train_preds.append(Y_pred)
+                train_loss_history.append(train_loss)
+
+                grads = self.backward(Y)
+                self.optimizer.step(grads)
+
+            val_loss_history = []
+            val_gts = []
+            val_preds = []
+            for i, batch in enumerate(val_loader):
+                X, Y = batch
+                X = X.numpy()
+                Y = Y.numpy()
+                Y_pred = self.model.forward(X)
+                val_loss = self.loss_func(Y, Y_pred)
+                val_loss_history.append(val_loss)
+                
+                val_gts.append(Y)
+                val_preds.append(Y_pred)         
+
+            # appending losses to history
+            train_loss = np.array(train_loss_history).mean()
+            val_loss = np.array(val_loss_history).mean()
+            
+            train_gts = np.concatenate(train_gts, axis=0)
+            train_preds = np.concatenate(train_preds, axis=0)
+            
+            val_gts = np.concatenate(val_gts, axis=0)
+            val_preds = np.concatenate(val_preds, axis=0)
+            
+            train_acc = balanced_accuracy_score(train_gts, train_preds)
+            val_acc = balanced_accuracy_score(val_gts, val_preds)
+            
+            log_dict['epoch'].append(epoch)
+            log_dict['train_loss'].append(train_loss)
+            log_dict['val_loss'].append(val_loss)
+            log_dict['train_acc'].append(train_acc)
+            log_dict['val_acc'].append(val_acc)
+        
+        return log_dict
+
+
 if __name__ == '__main__':
-    m = Model([2, 1, 2], [ReLU(), ReLU()])
+    # architecture: 2 x 1 x 2
+    m = Model([2, 1, 2], [ReLU(),Softmax()])
+
+    X = np.array([[0 ,1],
+                  [-1,0]])
+
+    W0 = np.array([[2],
+                   [1]])
+    b0 = np.array([[1]])
+    W1 = np.array([[2, 3]])
+    b1 = np.array([[1, -1]])
+
+    m.weights = [W0, W1]
+    m.bias = [b0, b1]
+
+    t = Trainer(m, None, CrossEntropy())
+    t.batch_size = X.shape[0]
+
+    y = np.array([[0,1], 
+                  [1,0]])
+    prediction = m.forward(X)
+    grads = t.backward(y)
 
     X = np.array([
                    [0 ,1]
                   ,[-1,0]
                 ])
-
-    O = m.forward(X)
-
-    import IPython; IPython.embed()
