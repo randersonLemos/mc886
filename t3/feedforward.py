@@ -226,25 +226,67 @@ class Trainer:
         ############################################################
         # TODO: implement here the backward step.
         ############################################################
+        m   = Y.shape[0]
 
-        delta = self.model.activations[-1] - Y
-        import IPython; IPython.embed()
+        L    = len(self.model.activations) - 1
+        WL   = None
+        aL   = self.model.activations[L]
+        aLm  = self.model.activations[L-1]
+        zLm  = self.model.Z_list[L-1]
+        gLm  = self.model.activation_funcs[L-1]
+        dgLm = gLm.grad(zLm)
 
+        delta = (aL - Y)*dgLm
+        dw = np.dot(aLm.T, delta) / m
+        db = np.sum(delta, axis=0) / m
+        grads = [ (dw, db, ) ]
+
+        #print('+++')
+        #print('-dw-')
+        #print(dw)
+        #print('-db-')
+        #print(db)
+
+        while L > 1:
+            L = L - 1
+            WL    = self.model.weights[L]
+            aLm   = self.model.activations[L-1]
+            zLm   = self.model.Z_list[L-1]
+            gLm   = self.model.activation_funcs[L-1]
+            dgLm  = gLm.grad(zLm)
+
+            delta = np.dot(delta, WL.T)*dgLm
+            dw  = np.dot(aLm.T, delta) / m
+            db = np.sum(delta, axis=0) / m
+            grads.append( (dw, db, ) )
+
+        #for dw, db in grads:
+        #    print('-dw-')
+        #    print(dw)
+        #    print('-db-')
+        #    print(db)
+
+    def backward_(self, Y):
+        y_pred = self.model.activations[-1]
         diff = self.loss_func.grad(Y, y_pred)
-
         weights_and_bias_grads = []
         
         for i, weight in enumerate(reversed(self.model.weights)):
             dw = np.dot(self.model.activations[-i -2].T, diff) * (1 / self.batch_size) 
+            print('-dw-')
+            print(dw)
             db = np.sum(diff, axis=0) * (1 / self.batch_size)
-            weights_and_bias_grads.append((dw,db))
+            print('-db-')
+            print(db)
+            #weights_and_bias_grads.append((dw,db))
+            weights_and_bias_grads.append(dw)
             
             if i < len(self.model.weights) -1 :
                 diff = np.dot(diff, weight.T) * self.model.activation_funcs[-i -2].grad(self.model.Z_list[-i -2])
                 
         return weights_and_bias_grads[::-1]
-              
-    
+
+
     def train(self, n_epochs: int, train_loader: DataLoader, val_loader: DataLoader):
         """
         Arguments:
@@ -317,30 +359,69 @@ class Trainer:
 
 
 if __name__ == '__main__':
+    ######## checking Backward pass ########
+    
     # architecture: 2 x 1 x 2
     m = Model([2, 1, 2], [ReLU(),Softmax()])
+    
+    X = np.array([
+          [0 ,1]
+        , [-1,0]
+        #, [0.5,0.5]
+    ])
 
-    X = np.array([[0 ,1],
-                  [-1,0]])
-
+    y = np.array([
+          [0,1]
+        , [1,0]
+        #, [1,1]
+    ])
+ 
+    
     W0 = np.array([[2],
                    [1]])
     b0 = np.array([[1]])
     W1 = np.array([[2, 3]])
     b1 = np.array([[1, -1]])
-
+    
     m.weights = [W0, W1]
     m.bias = [b0, b1]
-
+    
     t = Trainer(m, None, CrossEntropy())
     t.batch_size = X.shape[0]
-
-    y = np.array([[0,1], 
-                  [1,0]])
+    
     prediction = m.forward(X)
+    grads_ = t.backward_(y)
     grads = t.backward(y)
-
-    X = np.array([
-                   [0 ,1]
-                  ,[-1,0]
-                ])
+    #import pprint
+    #pprint.pprint(grads)
+    #pprint.pprint(grads_)
+    #import IPython; IPython.embed()
+    
+    # We let this value just in case you need to check your results
+    #print(updated_weights_bias)
+    # expected_dZ1 = np.array([[ 0.5       , -0.5       ],
+    #                         [-0.11920292,  0.11920292]])
+    #
+    # expected_dZ0 = np.array([[-0.5],
+    #                          [ 0. ]])
+    #
+    # y_pred = np.array([[0.5       , 0.5       ],
+    #                    [0.88079708, 0.11920292]])
+    
+    
+    #expected_dW1 = np.array([[ 0.5, -0.5]])
+    #
+    #expected_db1 = np.array([[ 0.19039854, -0.19039854]])
+    #
+    #expected_dW0 = np.array([[ 0.  ],
+    #                         [-0.25]])
+    #
+    #expected_db0 = np.array([[-0.25]])
+    #
+    #dW1, db1 = grads[1]
+    #assert (abs(expected_dW1 - dW1) < 1e-8).all(), f"Expected result for dW1 is {expected_dW1}, but it returns {dW1}"
+    #assert (abs(expected_db1 - db1) < 1e-8).all(), f"Expected result for db1 is {expected_db1}, but it returns {db1}"
+    #
+    #dW0, db0 = grads[0]
+    #assert (abs(expected_dW0 - dW0) < 1e-8).all(), f"Expected result for dW0 is {expected_dW0}, but it returns {dW0}"
+    #assert (abs(expected_db0 - db0) < 1e-8).all(), f"Expected result for db0 is {expected_db0}, but it returns {db0}"
