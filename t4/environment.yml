@@ -16,3 +16,4 @@ dependencies:
   - seaborn
   - matplotlib
   - scikit-learn
+  - tensorflow-gpu=2.8
